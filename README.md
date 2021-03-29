@@ -1,12 +1,14 @@
-This is a reference code of the proposed TLSR method
+# Transitive Learning: Exploring the Transitivity of Degradations for Blind Super-Resolution (TLSR)
+This repository is for TLSR introduced in the following paper
 
+Yuanfei Huang, Jie Li, Yanting Hu, Xinbo Gao* and Wen Lu, "Interpretable Detail-Fidelity Attention Network for Single Image Super-Resolution", arXiv, 2021.
+[arXiv]()
 ## Dependenices
 * python 3.7
 * pytorch >= 1.5
 * NVIDIA GPU + CUDA
 
 ## Models
-As the 100MB limit on the size of the supplementary materials but the DoTNet is based on the ResNet50 (~100MB), we only provide the reference codes in this file and will release the trained models publicly in the future.
 
 ## Data preparing
 Download [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) datasets into the path "data/Datasets/Train/DIV2K". 
