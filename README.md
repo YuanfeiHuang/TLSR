@@ -1,25 +1,45 @@
-# Transitional Learning: Exploring the Transition States of Degradation for Blind Super-resolution (TLSR)
+# Transitive Learning: Exploring the Transitivity of Degradations for Blind Super-Resolution (TLSR)
 This repository is for TLSR introduced in the following paper
 
-Yuanfei Huang, Jie Li, Yanting Hu, Xinbo Gao and Hua Huang, "Transitional Learning: Exploring the Transition States of Degradation for Blind Super-resolution", arXiv preprint arXiv:2103.15290(2021).
-[arXiv](https://arxiv.org/abs/2103.15290)
+Yuanfei Huang, Jie Li, Yanting Hu, Xinbo Gao and Hua Huang*, "Transitive Learning: Exploring the Transitivity of Degradations for Blind Super-Resolution", IEEE TPAMI, 2022, early access.
+[paper](https://ieeexplore.ieee.org/document/9893392)
 ## Dependenices
 * python 3.7
 * pytorch >= 1.5
 * NVIDIA GPU + CUDA
 
 ## Models
+Download the pre-trained models from [Google Drive](https://drive.google.com/drive/folders/1UpN0Zf6mqYrj6YU9jwB5XnkGNqYjIaTI?usp=sharing) 
+or [百度网盘](https://pan.baidu.com/s/1m3maDvSBRufs6rsVwhL1mQ?pwd=ohwt) (提取码: ohwt)
 
 ## Data preparing
-Download [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) and [Flickr2K](http://cv.snu.ac.kr/research/EDSR/Flickr2K.tar) datasets into the path "data/Datasets/Train/DF2K". 
+Download [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) and [Flickr2K](https://cv.snu.ac.kr/research/EDSR/Flickr2K.tar) datasets into the path "data/Datasets/Train/DF2K". 
 
-For convolutive degradations:
-* '-degrad_train' == {'type': 'B', 'min_sigma': 0.2, 'max_sigma': 4.0}
-* '-degrad_test' == [{'type': 'B', 'sigma': 2.0}] # for evaluation.
+## Settings (option.py)
+For convolutive degradations (isotropic Gaussian):
+* '-scale' == 2
+* '-degrad_train' == {'type': 'B', 'min_sigma': 0.2, 'max_sigma': 2.0} # for Training.
+* '-degrad_test' == [{'type': 'B', 'sigma': 1.0}] # for Testing.
+
+    OR
+* '-scale' == 4
+* '-degrad_train' == {'type': 'B', 'min_sigma': 0.2, 'max_sigma': 4.0} # for Training.
+* '-degrad_test' == [{'type': 'B', 'sigma': 2.0}] # for Testing.
+
+For convolutive degradations (anisotropic Gaussian):
+* '-scale' == 4
+* '-degrad_train' == {'type': 'B_aniso', 'min_sigma': 0, 'max_sigma': 0.5}
+* '-degrad_test' == [{'type': 'B_aniso', 'sigma': 0.25}] # for evaluation.
 
 For additive degradations:
+* '-scale' == 1 OR 2 OR 4
 * '-degrad_train' == {'type': 'N', 'min_sigma': 0, 'max_sigma': 30}
 * '-degrad_test' == [{'type': 'N', 'sigma': 15}] # for evaluation.
+
+For other degradations:
+* '-scale' == 1
+* '-degrad_train' == {'type': 'JPEG', 'min_sigma': 10, 'max_sigma': 30}
+* '-degrad_test' == [{'type': 'JPEG', 'sigma': 20}] # for evaluation.
 
 ## Train
 ```bash
@@ -31,12 +51,13 @@ python main.py --train 'Test'
 ```
 ## Citation
 ```
-@misc{huang2021transitional,
-      title={Transitional Learning: Exploring the Transition States of Degradation for Blind Super-resolution}, 
-      author={Yuanfei Huang and Jie Li and Yanting Hu and Xinbo Gao and Hua Huang},
-      year={2021},
-      eprint={2103.15290},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
-}
+@ARTICLE{TLSR2022TPAMI,
+  author={Huang, Yuanfei and Li, Jie and Hu, Yanting and Gao, Xinbo and Huang, Hua},
+  journal={IEEE Transactions on Pattern Analysis and Machine Intelligence}, 
+  title={Transitional Learning: Exploring the Transition States of Degradation for Blind Super-Resolution}, 
+  year={2022},
+  volume={},
+  number={},
+  pages={1-16},
+  doi={10.1109/TPAMI.2022.3206870}}
 ```
