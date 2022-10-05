@@ -1,14 +1,16 @@
-import os, torch, cv2
+import os, torch, cv2, shutil
 import numpy as np
 from torch.autograd import Variable
 import skimage.color as sc
 import torch.nn.functional as F
+from datetime import datetime
+
 
 def random_cropping(x, patch_size, number):
-    if isinstance(x,tuple):
+    if isinstance(x, tuple):
         if min(x[0].shape[2], x[0].shape[3]) < patch_size:
             for i in range(len(x)):
-                x[i] = F.interpolate(x[i], scale_factor=0.1+patch_size/min(x[i].shape[2], x[i].shape[3]))
+                x[i] = F.interpolate(x[i], scale_factor=0.1 + patch_size / min(x[i].shape[2], x[i].shape[3]))
 
         b, c, w, h = x[0].size()
         ix = np.random.choice(w - patch_size + 1, number)
@@ -19,7 +21,8 @@ def random_cropping(x, patch_size, number):
                 if i == 0:
                     patch[l] = x[l][:, :, ix[i]:ix[i] + patch_size, iy[i]:iy[i] + patch_size]
                 else:
-                    patch[l] = torch.cat((patch[l], x[l][:, :, ix[i]:ix[i] + patch_size, iy[i]:iy[i] + patch_size]), dim=0)
+                    patch[l] = torch.cat((patch[l], x[l][:, :, ix[i]:ix[i] + patch_size, iy[i]:iy[i] + patch_size]),
+                                         dim=0)
     else:
         b, c, w, h = x.size()
 
@@ -36,7 +39,6 @@ def random_cropping(x, patch_size, number):
 
 
 def crop_merge_TLSR(x_value, TLSR_Param, model, scale, shave, min_size, n_GPUs):
-
     n_GPUs = min(n_GPUs, 4)
     b, c, h, w = x_value.size()
     h_half, w_half = h // 2, w // 2
@@ -50,7 +52,7 @@ def crop_merge_TLSR(x_value, TLSR_Param, model, scale, shave, min_size, n_GPUs):
             inputbatch = torch.cat(inputlist[i:(i + n_GPUs)], dim=0)
             degree = TLSR_Param['DoT'].unsqueeze(0).repeat(inputbatch.shape[0])
             inputbatch = {'value': inputbatch, 'num_samples': TLSR_Param['num_samples'], 'DoT': degree,
-                        'transi_learn': TLSR_Param['transi_learn']}
+                          'transi_learn': TLSR_Param['transi_learn']}
             outputbatch = model(inputbatch)
             outputlist.extend(outputbatch.chunk(n_GPUs, dim=0))
     else:
@@ -71,11 +73,11 @@ def crop_merge_TLSR(x_value, TLSR_Param, model, scale, shave, min_size, n_GPUs):
 
 
 def quantize(img, rgb_range):
-    return img.mul(255).clamp(0, 255).round().div(255)
+    return img.mul(rgb_range).clamp(0, rgb_range).round().div(rgb_range)
 
 
 def rgb2ycbcrT(rgb):
-    rgb = rgb.numpy().transpose(1, 2, 0)/255
+    rgb = rgb.numpy().transpose(1, 2, 0) / 255
     yCbCr = sc.rgb2ycbcr(rgb)
 
     return torch.Tensor(yCbCr[:, :, 0])
@@ -117,15 +119,14 @@ def calc_SSIM(input, target, rgb_range, shave):
         input = rgb2ycbcrT(input)
         target = rgb2ycbcrT(target)
     else:
-        input = input
-        target = target[:, 0:h, 0:w]
+        input = input[0, 0:h, 0:w].mul(255).clamp(0, 255).round()
+        target = target[0, 0:h, 0:w].mul(255).clamp(0, 255).round()
     input = input[shave:(h - shave), shave:(w - shave)]
     target = target[shave:(h - shave), shave:(w - shave)]
     return ssim(input.numpy(), target.numpy())
 
 
 def calc_PSNR(input, target, rgb_range, shave):
-
     c, h, w = input.size()
     if c > 1:
         input = quantize(input, rgb_range)
@@ -134,7 +135,6 @@ def calc_PSNR(input, target, rgb_range, shave):
         target_Y = rgb2ycbcrT(target)
         diff = (input_Y - target_Y).view(1, h, w)
     else:
-        input = input
         target = target[:, 0:h, 0:w]
         diff = input - target
     diff = diff[:, shave:(h - shave), shave:(w - shave)]
@@ -145,55 +145,91 @@ def calc_PSNR(input, target, rgb_range, shave):
 
 
 def save_checkpoint(model, epoch, folder):
-    model_path = folder + '/model_epoch_{.f}.pth'.format(epoch)
+    model_path = folder + '/model_epoch_{:d}.pth'.format(epoch)
     torch.save(model.state_dict(), model_path)
     print('Checkpoint saved to {}'.format(model_path))
 
 
-def load_checkpoint(resume, n_GPUs, model):
+def load_checkpoint(resume, n_GPUs, model, is_cuda=True):
     if os.path.isfile(resume):
         new_checkpoint = model.state_dict()
         print("=> loading checkpoint '{}'".format(resume))
         # checkpoint = torch.load(resume, map_location={'cuda:1': 'cuda:0'})
-        checkpoint = torch.load(resume)
-        if n_GPUs > 1:
-            for k, v in checkpoint.items():
-                if k[:6] != 'module':
-                    new_checkpoint[k] = v
-                else:
-                    name = k[7:]
-                    new_checkpoint[name] = v
-        else:
-            for k, v in checkpoint.items():
-                if k[:6] == 'module':
-                    name = k[7:]
-                    new_checkpoint[name] = v
-                else:
-                    new_checkpoint[k] = v
-        model.load_state_dict(new_checkpoint)
+        # checkpoint = torch.load(resume)
+        checkpoint = torch.load(resume) if is_cuda else torch.load(resume, map_location=torch.device('cpu'))
+        # if isinstance(checkpoint, dict):
+        #     checkpoint = checkpoint['state_dict']
+        # if n_GPUs > 1:
+        #     for k, v in checkpoint.items():
+        #         if k[:6] != 'module':
+        #             new_checkpoint[k] = v
+        #         else:
+        #             name = k[7:]
+        #             new_checkpoint[name] = v
+        # else:
+        #     for k, v in checkpoint.items():
+        #         if k[:6] == 'module':
+        #             name = k[7:]
+        #             new_checkpoint[name] = v
+        #         else:
+        #             if new_checkpoint[k].shape == v.shape:
+        #                 new_checkpoint[k] = v
+        # model.load_state_dict(new_checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
     else:
         print("=> no checkpoint found at '{}'".format(resume))
     return model
 
 
 def print_args(args):
-    args.model_path = 'models/TLSR_x' + str(args.scale) + \
-                      '_' + args.degrad_train['type'] + \
-                      str(args.degrad_train['min_sigma']) + '-' + str(args.degrad_train['max_sigma']) + \
-                      '_In' + str(args.patch_size) + '_BS' + str(args.batch_size) + \
-                      '_N' + str(args.n_homo_blocks) + 'M' + str(args.n_transi_layers) + 'C' + str(args.n_channels) +\
-                      'T' + str(args.num_samples) + 'P' + str(args.size_samples) + \
-                      '_lr-SR' + str(args.lr_SR) + 'DoT' + str(args.lr_DoT)
+    if args.train == 'Train':
+        if args.run_DoT:
+            if args.run_SR:
+                if args.DoT == 'est':
+                    name = 'TLSR'
+                elif args.DoT == 'gt':
+                    name = 'TLSR-GT-R{}'.format(args.DoT_rand)
+            elif args.DoT == 'est':
+                name = 'DoTNet-{}'.format(args.pretrained_model)
+        elif args.run_SR:
+            name = 'SRNet'
+        else:
+            name = ''
 
-    args.resume_DoT = args.model_path + '/DoTNet/model_epoch_' + str(args.start_epoch_DoT) + '.pth'
-    args.resume_SR = args.model_path + '/SR Model/model_epoch_' + str(args.start_epoch_SR) + '.pth'
+        args.model_path = 'models/' + name + '_x' + str(args.scale) + \
+                          '_' + args.degrad_train['type'] + \
+                          str(args.degrad_train['min_sigma']) + '-' + str(args.degrad_train['max_sigma']) + \
+                          '_In' + str(args.patch_size) + '_BS' + str(args.batch_size) + \
+                          '_N{:d}-{:d}'.format(args.n_homo_blocks[0], args.n_homo_blocks[1]) + 'M{:d}-{:d}'.format(args.n_transi_layers[0], args.n_transi_layers[1]) +\
+                          'C{:d}-h{:d}t{:d}_'.format(args.n_channels, args.n_homo_width, args.n_transi_width) + \
+                          'T' + str(args.num_samples) + 'P' + str(args.size_samples) + \
+                          datetime.now().strftime("_%Y%m%d_%H%M") + '_GroupConv'
 
-    if args.run_SR:
-        if not os.path.exists(args.model_path + '/SR Model'):
-            os.makedirs(args.model_path + '/SR Model')
-    if args.run_DoT:
-        if not os.path.exists(args.model_path + '/DoTNet'):
-            os.makedirs(args.model_path + '/DoTNet')
-    print(args)
+        args.resume_DoT = args.model_path + '/DoTNet/model_epoch_' + str(args.start_epoch_DoT) + '.pth'
+        args.resume_SR = args.model_path + '/SR Model/model_epoch_' + str(args.start_epoch_SR) + '.pth'
 
+        if args.run_SR:
+            if not os.path.exists(args.model_path + '/SR Model'):
+                os.makedirs(args.model_path + '/SR Model')
+        if args.run_DoT:
+            if not os.path.exists(args.model_path + '/DoTNet'):
+                os.makedirs(args.model_path + '/DoTNet')
+        print(args)
+
+        if not os.path.exists(args.model_path + '/Code'):
+            os.makedirs(args.model_path + '/Code')
+
+        shutil.copyfile('main.py', args.model_path + '/Code/main.py')
+        shutil.copyfile('model.py', args.model_path + '/Code/model.py')
+        shutil.copyfile('utils.py', args.model_path + '/Code/utils.py')
+        shutil.copyfile('option.py', args.model_path + '/Code/option.py')
+        shutil.copytree('src', args.model_path + '/Code/src', dirs_exist_ok=True)
+        shutil.copytree('data', args.model_path + '/Code/data', dirs_exist_ok=True)
+
+    elif args.train == 'Test':
+        args.model_path = 'pre-trained models/TLSR_x{}_{}{}-{}'\
+            .format(args.scale, args.degrad_train['type'],
+                    args.degrad_train['min_sigma'], args.degrad_train['max_sigma'])
+        args.resume_SR = args.model_path + '/SR_Model.pth'
+        args.resume_DoT = args.model_path + '/DoTNet.pth'
     return args
