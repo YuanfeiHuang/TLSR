@@ -1,68 +1,99 @@
+import torch
 import torchvision.models as models
 from collections import OrderedDict
 from src.basic_module import *
 
 
 class Generator(nn.Module):
-    def __init__(self, n_colors, n_channels, n_homo_blocks, n_transi_layers, act=nn.ReLU(inplace=True), scale=4):
+    def __init__(self, n_colors, n_channels, n_homo_blocks, n_transi_layers, n_homo_width, n_transi_width, act=nn.ReLU(inplace=True), scale=4):
         super(Generator, self).__init__()
         self.input = nn.Conv2d(n_colors, n_channels, 3, 1, 1, 1, 1, True)
 
         self.feature_homo = nn.Sequential(
-            carn(n_homo_blocks, n_channels, 3, 1, 1, 1, 1, bias=False, act=act, transi_learn=False))
+            *[
+                net_group('ResNet', n_homo_blocks[1], n_channels, n_homo_width,
+                          kernel_size=3, act=act, glo_res=True, transi_learn=False)
+                for _ in range(n_homo_blocks[0])
+            ],
+            conv_layer(n_channels, n_channels, 3, 1, 1, 1, 1, False, act=False)
+        )
         self.transi_learn = nn.Sequential(
-            *[conv_interp(n_channels, n_channels, 3, 1, 1, 1, 1, False, act=act) for _ in range(n_transi_layers)])
-        # self.transi_learn = nn.Sequential(
-        #     *[res_block(n_channels, act=act, transi_learn=True) for _ in range(n_transi_layers)])
+            *[
+                net_group('ResNet', n_transi_layers[1], n_channels, n_transi_width,
+                          kernel_size=3, act=act, glo_res=False, transi_learn=True)
+                for _ in range(n_transi_layers[0])
+            ],
+        )
+        self.output = nn.Sequential(
+            UpScale('SubPixel', n_channels, kernel=1, groups=1, scale=scale, bn=False, act=False, bias=False,
+                    transi_learn=False),
+            conv_layer(n_channels, n_colors, 3, 1, 1, 1, 1, False, act=False)
+        )
 
-        self.upscale = nn.Sequential(UpScale('SubPixel', n_channels, scale, bn=False, act=False, bias=False))
-        self.output = nn.Conv2d(n_channels, n_colors, 3, 1, 1, 1, 1, True)
+    def forward(self, x):
+        y = self.input(x['value'])
+        y = self.feature_homo(y) + y
 
-    def forward(self, x_plus):
-        body_value = self.input(x_plus['value'])
-        body_value = self.feature_homo(body_value)
+        y = self.transi_learn(
+            {'value': y, 'DoT': x['DoT'], 'transi_learn': x['transi_learn']}
+        )['value']
 
-        body_plus = {'value': body_value, 'DoT': x_plus['DoT'], 'transi_learn': x_plus['transi_learn']}
-        body_plus = self.transi_learn(body_plus)
-        body_value = body_plus['value']
+        y = self.output(y)
 
-        body_value = self.upscale(body_value)
-        output = self.output(body_value)
+        return y
 
-        return output
+class PlainCNN(nn.Module):
+    def __init__(self, n_colors, patch_size, n_channels, max_chn):
+        super(PlainCNN, self).__init__()
 
-
-class DoTNet_ResNet50(nn.Module):
-    def __init__(self):
-        super(DoTNet_ResNet50, self).__init__()
-
-        self.features = nn.Sequential(ResNet(Bottleneck, [3, 4, 6, 3], norm_layer=None))
-        pretrained_resnet50 = models.resnet50(pretrained=True)
-        premodel_dict = pretrained_resnet50.state_dict()
-
-        model_dict = self.features[0].state_dict()
-        for k, v in model_dict.items():
-            model_dict[k] = premodel_dict[k]
-        self.features[0].load_state_dict(model_dict)
-
-        self.classifier = nn.Sequential(
+        self.input = nn.Conv2d(n_colors, n_channels, kernel_size=3, padding=1)
+        num_module = int(np.log2(patch_size))
+        # num_layers = [(num_module-i) for i in range(num_module)]
+        num_layers = [2 for _ in range(num_module)]
+        self.features = nn.Sequential(
             OrderedDict(
                 [
-                    ('linear0', nn.Linear(2048, 128)),
-                    ('relu', nn.ReLU(inplace=True)),
-                    ('linear1', nn.Linear(128, 2))
+                    ('block{:d}'.format(i),
+                     nn.Sequential(
+                         *[bottleneck_(min(n_channels * (2 ** (i)), max_chn), min(n_channels * (2 ** (i)) // 2, 64))
+                           for _ in range(num_layers[i])],
+                         nn.Conv2d(min(n_channels * (2 ** (i)), max_chn), min(n_channels * (2 ** (i + 1)), max_chn),
+                                   kernel_size=1, stride=2, padding=0)
+                     )) for i in range(num_module)
                 ]
             )
         )
+        self.out_channels = min(n_channels * (2 ** (num_module)), max_chn)
+
+    def forward(self, x):
+        fea = self.input(x)
+        fea = self.features(fea)
+        return fea
+
+
+class DoTNet(nn.Module):
+    def __init__(self, n_colors, patch_size):
+        super(DoTNet, self).__init__()
+
+        self.features = PlainCNN(n_colors, patch_size, 32, max_chn=256)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(self.features.out_channels, 64),
+            nn.LeakyReLU(0.1, True),
+            nn.Linear(64, 1)
+        )
+
         for key in self.classifier.state_dict():
             if key.split('.')[-1] == 'weight':
-                if 'linear' in key:
-                    nn.init.kaiming_normal_(self.classifier.state_dict()[key])
+                nn.init.kaiming_normal_(self.classifier.state_dict()[key])
+
+        for key in self.features.state_dict():
+            if key.split('.')[-1] == 'weight' and 'conv' in key:
+                nn.init.kaiming_normal_(self.features.state_dict()[key])
 
     def forward(self, x):
         y = self.features(x)
         y = F.adaptive_avg_pool2d(y, 1)
         y = torch.flatten(y, 1)
         y = self.classifier(y)
-        y = F.softmax(y, dim=1)[:, 0]
-        return y
+        return y.squeeze(1)
