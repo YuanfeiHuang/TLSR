@@ -55,9 +55,9 @@ python main.py --train 'Test'
   author={Huang, Yuanfei and Li, Jie and Hu, Yanting and Gao, Xinbo and Huang, Hua},
   journal={IEEE Transactions on Pattern Analysis and Machine Intelligence}, 
   title={Transitional Learning: Exploring the Transition States of Degradation for Blind Super-Resolution}, 
-  year={2022},
-  volume={},
-  number={},
-  pages={1-16},
+  year={2023},
+  volume={45},
+  number={5},
+  pages={6495-6510},
   doi={10.1109/TPAMI.2022.3206870}}
 ```
