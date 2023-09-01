@@ -1,7 +1,7 @@
-# Transitive Learning: Exploring the Transitivity of Degradations for Blind Super-Resolution (TLSR)
+# Transitional Learning: Exploring the Transition States of Degradation for Blind Super-resolution (TLSR)
 This repository is for TLSR introduced in the following paper
 
-Yuanfei Huang, Jie Li, Yanting Hu, Xinbo Gao and Hua Huang*, "Transitive Learning: Exploring the Transitivity of Degradations for Blind Super-Resolution", IEEE TPAMI, 2023, 45(5): 6495-6510.
+Yuanfei Huang, Jie Li, Yanting Hu, Xinbo Gao and Hua Huang*, "Transitional Learning: Exploring the Transition States of Degradation for Blind Super-resolution", IEEE TPAMI, 2023, 45(5): 6495-6510.
 [paper](https://ieeexplore.ieee.org/document/9893392)
 ## Dependenices
 * python 3.7
